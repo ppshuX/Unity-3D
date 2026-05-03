@@ -10,15 +10,15 @@ public class PlayerController : MonoBehaviour
     [SerializeField]
     private Camera cam;
 
-    private Vector3 velocity = Vector3.zero;  // ËÙ¶È£ºÃ¿ÃëÒÆ¶¯µÄ¾àÀë
-    private Vector3 yRotation = Vector3.zero;  // Ðý×ª½ÇÉ«
-    private Vector3 xRotation = Vector3.zero;  // Ðý×ªÊÓ½Ç
+    private Vector3 velocity = Vector3.zero;  // ï¿½Ù¶È£ï¿½Ã¿ï¿½ï¿½ï¿½Æ¶ï¿½ï¿½Ä¾ï¿½ï¿½ï¿½
+    private Vector3 yRotation = Vector3.zero;  // ï¿½ï¿½×ªï¿½ï¿½É«
+    private Vector3 xRotation = Vector3.zero;  // ï¿½ï¿½×ªï¿½Ó½ï¿½
 
-    private float cameraRotationTotal = 0f;  // ÀÛ¼Æ×ªÁË¶àÉÙ¶È
+    private float cameraRotationTotal = 0f;  // ï¿½Û¼ï¿½×ªï¿½Ë¶ï¿½ï¿½Ù¶ï¿½
     [SerializeField]
     private float cameraRotationLimit = 85f;
 
-    private Vector3 thrusterForce = Vector3.zero;  // ÏòÉÏµÄÍÆÁ¦
+    private Vector3 thrusterForce = Vector3.zero;  // ï¿½ï¿½ï¿½Ïµï¿½ï¿½ï¿½ï¿½ï¿½
 
 
     public void Move(Vector3 _velocity)
@@ -47,7 +47,7 @@ public class PlayerController : MonoBehaviour
 
         if (thrusterForce != Vector3.zero)
         {
-            rb.AddForce(thrusterForce);  // ×÷ÓÃTime.fixedDeltaTimeÃë£º0.02s
+            rb.AddForce(thrusterForce);  // ï¿½ï¿½ï¿½ï¿½Time.fixedDeltaTimeï¿½ë£º0.02s
         }
     }
 

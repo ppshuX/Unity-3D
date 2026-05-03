@@ -19,14 +19,24 @@ public class NetworkManagerUI : MonoBehaviour
         hostBtn.onClick.AddListener(() =>
         {
             NetworkManager.Singleton.StartHost();
+            DestroyAllButtons();
         });
         serverBtn.onClick.AddListener(() =>
         {
             NetworkManager.Singleton.StartServer();
+            DestroyAllButtons();
         });
         clientBtn.onClick.AddListener(() =>
         {
             NetworkManager.Singleton.StartClient();
+            DestroyAllButtons();
         });
+    }
+
+    private void DestroyAllButtons()
+    {
+        Destroy(hostBtn.gameObject);
+        Destroy(serverBtn.gameObject);
+        Destroy(clientBtn.gameObject);
     }
 }
