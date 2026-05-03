@@ -44,7 +44,7 @@ public class Player : NetworkBehaviour
         }
     }
 
-    public void TakeDamage(int damage)
+    public void TakeDamage(int damage)  // 收到了伤害，只在服务器端被调用
     {
         if (isDead.Value) return;
 
@@ -55,12 +55,15 @@ public class Player : NetworkBehaviour
             currentHealth.Value = 0;
             isDead.Value = true;
 
-            DieOnServer();
+            if (!IsHost)
+            {
+                DieOnServer();
+            }
             DieClientRpc();
         }
     }
 
-    private IEnumerator Respawn()
+    private IEnumerator Respawn()  // 重生
     {
         yield return new WaitForSeconds(GameManager.Singleton.MatchingSettings.respawnTime);
 
