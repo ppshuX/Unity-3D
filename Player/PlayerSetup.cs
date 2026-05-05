@@ -17,9 +17,11 @@ public class PlayerSetup : NetworkBehaviour
 
         if (!IsLocalPlayer)
         {
+            SetLayerMaskForAllChildren(transform, LayerMask.NameToLayer("Remote Player"));
             DisableComponents();
         } else
         {
+            SetLayerMaskForAllChildren(transform, LayerMask.NameToLayer("Player"));
             sceneCamera = Camera.main;
             if (sceneCamera != null)
             {
@@ -32,6 +34,15 @@ public class PlayerSetup : NetworkBehaviour
         player.Setup();
 
         GameManager.Singleton.RegisterPlayer(name, player);
+    }
+
+    private void SetLayerMaskForAllChildren(Transform transform, LayerMask layerMask)
+    {
+        transform.gameObject.layer = layerMask;
+        for (int i = 0; i < transform.childCount; i++)
+        {
+            SetLayerMaskForAllChildren(transform.GetChild(i), layerMask);
+        }
     }
 
     private void DisableComponents()

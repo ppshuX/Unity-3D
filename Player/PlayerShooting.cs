@@ -10,10 +10,14 @@ public class PlayerShooting : NetworkBehaviour
     private WeaponManager weaponManager;
     private PlayerWeapon currentWeapon;
 
+    private float shootCoolDownTime = 0f;  // 距离上次开枪，过了多久。单位：秒
+    private int autoShootCount = 0;  // 当前一共连开多少枪
+
     [SerializeField]
     private LayerMask mask;
 
     private Camera cam;
+    private PlayerController playerController;
 
     enum HitEffectMaterial
     {
@@ -26,26 +30,32 @@ public class PlayerShooting : NetworkBehaviour
     {
         cam = GetComponentInChildren<Camera>();
         weaponManager = GetComponent<WeaponManager>();
+        playerController = GetComponent<PlayerController>();
     }
 
     // Update is called once per frame
     void Update()
     {
+        shootCoolDownTime += Time.deltaTime;
+
         if (!IsLocalPlayer) return;
 
         currentWeapon = weaponManager.GetCurrentWeapon();
 
-        if (currentWeapon.shootRate <= 0)  // ??
+        if (currentWeapon.shootRate <= 0)  // 单发
         {
-            if (Input.GetButtonDown("Fire1"))
+            if (Input.GetButtonDown("Fire1") && shootCoolDownTime >= currentWeapon.shootCoolDownTime)
             {
+                autoShootCount = 0;
                 Shoot();
+                shootCoolDownTime = 0f;  // 重置冷却时间
             }
         }
         else
         {
             if (Input.GetButtonDown("Fire1"))
             {
+                autoShootCount = 0;
                 InvokeRepeating("Shoot", 0f, 1f / currentWeapon.shootRate);
             }
             else if (Input.GetButtonUp("Fire1") || Input.GetKeyDown(KeyCode.Q))
@@ -55,7 +65,7 @@ public class PlayerShooting : NetworkBehaviour
         }
     }
 
-    private void OnHit(Vector3 pos, Vector3 normal, HitEffectMaterial material)  // ??????
+    private void OnHit(Vector3 pos, Vector3 normal, HitEffectMaterial material)  // 击中点的特效
     {
         GameObject hitEffectPrefab;
         if (material == HitEffectMaterial.Metal)
@@ -90,30 +100,44 @@ public class PlayerShooting : NetworkBehaviour
         OnHitClientRpc(pos, normal, material);
     }
 
-    private void OnShoot()  // ??????????????????
+    private void OnShoot(float recoilForce)  // 每次射击相关的逻辑，包括特效、声音等
     {
         weaponManager.GetCurrentGraphics().muzzleFlash.Play();
+        weaponManager.GetCurrentAudioSource().Play();
+
+        if (IsLocalPlayer)  // 施加后坐力
+        {
+            playerController.AddRecoilForce(recoilForce);
+        }
     }
 
     [ClientRpc]
-    private void OnShootClientRpc()
+    private void OnShootClientRpc(float recoilForce)
     {
-        OnShoot();
+        OnShoot(recoilForce);
     }
 
     [ServerRpc]
-    private void OnShootServerRpc()
+    private void OnShootServerRpc(float recoilForce)
     {
         if (!IsHost)
         {
-            OnShoot();
+            OnShoot(recoilForce);
         }
-        OnShootClientRpc();
+        OnShootClientRpc(recoilForce);
     }
 
     private void Shoot()
     {
-        OnShootServerRpc();
+        autoShootCount++;
+        float recoilForce = currentWeapon.recoilForce;
+
+        if (autoShootCount <= 3)
+        {
+            recoilForce *= 0.2f;
+        }
+
+        OnShootServerRpc(recoilForce);
 
         RaycastHit hit;
         if (Physics.Raycast(cam.transform.position, cam.transform.forward, out hit, currentWeapon.range, mask))

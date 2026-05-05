@@ -1,114 +1,434 @@
-# Lesson 6 打卡日志：射击特效（Muzzle Flash + Hit Effect）
+# Lesson 6 打卡日志：射击、后坐力与命中特效同步（课上代码版）
 
-> 主题：完成开枪与命中粒子特效的网络同步播放，并接入当前武器配置。
+> 主题：整合开火冷却、连发控制、后坐力、音效与命中特效，并完成联机同步。
 
 ## 本节核心知识点
 
-### 1) 武器特效数据抽象：`WeaponGraphics`
+### 1) `PlayerShooting` 完整开火逻辑
 
-- 给武器模型新增统一特效入口：
-  - `muzzleFlash`
-  - `metalHitEffectPrefab`
-  - `stoneHitEffectPrefab`
-- 不同武器可配置不同特效，切枪后自动切换对应视觉反馈。
+- 维护 `shootCoolDownTime` 处理单发冷却。
+- 用 `autoShootCount` 控制连发前几枪后坐力减弱。
+- 单发与连发两套输入逻辑：
+  - `shootRate <= 0`：单发 + 冷却判定；
+  - `shootRate > 0`：`InvokeRepeating("Shoot", ...)` 连发。
+- `Q` 切枪时会 `CancelInvoke("Shoot")`，避免连发残留。
 
-### 2) 开枪特效同步：`OnShootServerRpc + OnShootClientRpc`
+### 2) 联机同步模式
 
-- 本地调用 `OnShootServerRpc()` 上报开火事件。
-- 服务器转发 `OnShootClientRpc()` 给所有客户端。
-- 客户端执行 `OnShoot()`，播放 `weaponManager.GetCurrentGraphics().muzzleFlash`。
+- 开枪特效：`OnShootServerRpc -> OnShootClientRpc`。
+- 命中特效：`OnHitServerRpc -> OnHitClientRpc`。
+- 伤害判定：`ShootServerRpc(name, damage)` 在服务器端权威执行。
 
-### 3) 命中特效同步：`OnHitServerRpc + OnHitClientRpc`
+### 3) `WeaponManager` 统一资源入口
 
-- 命中后上报命中点、法线与材质类型。
-- 各端执行 `OnHit(pos, normal, material)`：
-  - 根据材质选择金属或石头特效预制体；
-  - 用 `Quaternion.LookRotation(normal)` 对齐命中面朝向；
-  - `ParticleSystem.Emit(1)` + `Play()`；
-  - `Destroy(..., 1f)` 自动回收临时对象。
+- `EquipWeapon()` 负责销毁旧枪、生成新枪模型、缓存 `WeaponGraphics` 与 `AudioSource`。
+- 提供：
+  - `GetCurrentWeapon()`
+  - `GetCurrentGraphics()`
+  - `GetCurrentAudioSource()`
+- 本地玩家音频设为 2D（`spatialBlend = 0f`）。
 
-### 4) 射击输入与切枪冲突处理
+### 4) `PlayerController` 的后坐力接入
 
-- 单发：`Input.GetButtonDown("Fire1")`。
-- 连发：`InvokeRepeating("Shoot", 0f, 1f / currentWeapon.shootRate)`。
-- 停止条件：`Input.GetButtonUp("Fire1") || Input.GetKeyDown(KeyCode.Q)`，避免切枪时持续连发。
-
----
-
-## 本节实现结果（当前项目同步版）
-
-### 关键流程
-
-1. 本地玩家按下 `Fire1`。
-2. `PlayerShooting.Shoot()` 先触发 `OnShootServerRpc()`。
-3. 服务器广播 `OnShootClientRpc()`，全端播放枪口火焰。
-4. 射线命中后：
-   - 命中玩家：调用 `ShootServerRpc(name, damage)` 扣血，并触发 `Metal` 命中特效；
-   - 命中其他目标：触发 `Stone` 命中特效。
-5. 所有客户端在相同命中点播放对应粒子，视觉保持一致。
+- `AddRecoilForce()` 在每次开火时累积后坐力。
+- 旋转阶段将后坐力注入角色水平抖动与视角上抬。
+- 每次 `FixedUpdate` 后衰减 `recoilForce *= 0.5f`。
 
 ---
 
-## 本节关键脚本
+## 本节关键脚本（课上原始代码）
 
-### `Player/WeaponGraphics.cs`
+### `PlayerShooting.cs`
 
 ```csharp
-public class WeaponGraphics : MonoBehaviour
+using System.Collections;
+using System.Collections.Generic;
+using Unity.Netcode;
+using UnityEngine;
+
+public class PlayerShooting : NetworkBehaviour
 {
-    public ParticleSystem muzzleFlash;
-    public GameObject metalHitEffectPrefab;
-    public GameObject stoneHitEffectPrefab;
+    private const string PLAYER_TAG = "Player";
+
+    private WeaponManager weaponManager;
+    private PlayerWeapon currentWeapon;
+
+    private float shootCoolDownTime = 0f;  // 距离上次开枪，过了多久。单位：秒
+    private int autoShootCount = 0;  // 当前一共连开多少枪
+
+    [SerializeField]
+    private LayerMask mask;
+
+    private Camera cam;
+    private PlayerController playerController;
+
+    enum HitEffectMaterial
+    {
+        Metal,
+        Stone,
+    }
+
+    // Start is called before the first frame update
+    void Start()
+    {
+        cam = GetComponentInChildren<Camera>();
+        weaponManager = GetComponent<WeaponManager>();
+        playerController = GetComponent<PlayerController>();
+    }
+
+    // Update is called once per frame
+    void Update()
+    {
+        shootCoolDownTime += Time.deltaTime;
+
+        if (!IsLocalPlayer) return;
+
+        currentWeapon = weaponManager.GetCurrentWeapon();
+
+        if (currentWeapon.shootRate <= 0)  // 单发
+        {
+            if (Input.GetButtonDown("Fire1") && shootCoolDownTime >= currentWeapon.shootCoolDownTime)
+            {
+                autoShootCount = 0;
+                Shoot();
+                shootCoolDownTime = 0f;  // 重置冷却时间
+            }
+        } else
+        {
+            if (Input.GetButtonDown("Fire1"))
+            {
+                autoShootCount = 0;
+                InvokeRepeating("Shoot", 0f, 1f / currentWeapon.shootRate);
+            } else if (Input.GetButtonUp("Fire1") || Input.GetKeyDown(KeyCode.Q))
+            {
+                CancelInvoke("Shoot");
+            }
+        }
+    }
+
+    private void OnHit(Vector3 pos, Vector3 normal, HitEffectMaterial material)  // 击中点的特效
+    {
+        GameObject hitEffectPrefab;
+        if (material == HitEffectMaterial.Metal)
+        {
+            hitEffectPrefab = weaponManager.GetCurrentGraphics().metalHitEffectPrefab;
+        } else
+        {
+            hitEffectPrefab = weaponManager.GetCurrentGraphics().stoneHitEffectPrefab;
+        }
+
+        GameObject hitEffectObject = Instantiate(hitEffectPrefab, pos, Quaternion.LookRotation(normal));
+        ParticleSystem particleSystem = hitEffectObject.GetComponent<ParticleSystem>();
+        particleSystem.Emit(1);
+        particleSystem.Play();
+        Destroy(hitEffectObject, 1f);
+    }
+
+    [ClientRpc]
+    private void OnHitClientRpc(Vector3 pos, Vector3 normal, HitEffectMaterial material)
+    {
+        OnHit(pos, normal, material);
+    }
+
+    [ServerRpc]
+    private void OnHitServerRpc(Vector3 pos, Vector3 normal, HitEffectMaterial material)
+    {
+        if (!IsHost)
+        {
+            OnHit(pos, normal, material);
+        }
+        OnHitClientRpc(pos, normal, material);
+    }
+
+    private void OnShoot(float recoilForce)  // 每次射击相关的逻辑，包括特效、声音等
+    {
+        weaponManager.GetCurrentGraphics().muzzleFlash.Play();
+        weaponManager.GetCurrentAudioSource().Play();
+
+        if (IsLocalPlayer)  // 施加后坐力
+        {
+            playerController.AddRecoilForce(recoilForce);
+        }
+    }
+
+    [ClientRpc]
+    private void OnShootClientRpc(float recoilForce)
+    {
+        OnShoot(recoilForce);
+    }
+
+    [ServerRpc]
+    private void OnShootServerRpc(float recoilForce)
+    {
+        if (!IsHost)
+        {
+            OnShoot(recoilForce);
+        }
+        OnShootClientRpc(recoilForce);
+    }
+
+    private void Shoot()
+    {
+        autoShootCount++;
+        float recoilForce = currentWeapon.recoilForce;
+
+        if (autoShootCount <= 3)
+        {
+            recoilForce *= 0.2f;
+        }
+
+        OnShootServerRpc(recoilForce);
+
+        RaycastHit hit;
+        if (Physics.Raycast(cam.transform.position, cam.transform.forward, out hit, currentWeapon.range, mask))
+        {
+            if (hit.collider.tag == PLAYER_TAG)
+            {
+                ShootServerRpc(hit.collider.name, currentWeapon.damage);
+                OnHitServerRpc(hit.point, hit.normal, HitEffectMaterial.Metal);
+            } else
+            {
+                OnHitServerRpc(hit.point, hit.normal, HitEffectMaterial.Stone);
+            }
+        }
+    }
+
+    [ServerRpc]
+    private void ShootServerRpc(string name, int damage)
+    {
+        Player player = GameManager.Singleton.GetPlayer(name);
+        player.TakeDamage(damage);
+    }
 }
 ```
 
-### `Player/WeaponManager.cs`（新增特效访问）
+### `WeaponManager.cs`
 
 ```csharp
-private WeaponGraphics currentGraphics;
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+using Unity.Netcode;
 
-public WeaponGraphics GetCurrentGraphics()
+public class WeaponManager : NetworkBehaviour
 {
-    return currentGraphics;
+    [SerializeField]
+    private PlayerWeapon primaryWeapon;
+
+    [SerializeField]
+    private PlayerWeapon secondaryWeapon;
+
+    [SerializeField]
+    private GameObject weaponHolder;
+
+    private PlayerWeapon currentWeapon;
+    private WeaponGraphics currentGraphics;
+    private AudioSource currentAudiSource;
+
+    // Start is called before the first frame update
+    void Start()
+    {
+        EquipWeapon(primaryWeapon);
+    }
+
+    public void EquipWeapon(PlayerWeapon weapon)
+    {
+        currentWeapon = weapon;
+
+        if (weaponHolder.transform.childCount > 0)
+        {
+            Destroy(weaponHolder.transform.GetChild(0).gameObject);
+        }
+
+        GameObject weaponObject = Instantiate(currentWeapon.graphics, weaponHolder.transform.position, weaponHolder.transform.rotation);
+        weaponObject.transform.SetParent(weaponHolder.transform);
+
+        currentGraphics = weaponObject.GetComponent<WeaponGraphics>();
+        currentAudiSource = weaponObject.GetComponent<AudioSource>();
+
+        if (IsLocalPlayer)
+        {
+            currentAudiSource.spatialBlend = 0f;
+        }
+    }
+
+    public PlayerWeapon GetCurrentWeapon()
+    {
+        return currentWeapon;
+    }
+
+    public WeaponGraphics GetCurrentGraphics()
+    {
+        return currentGraphics;
+    }
+
+    public AudioSource GetCurrentAudioSource()
+    {
+        return currentAudiSource;
+    }
+
+    private void ToggleWeapon()
+    {
+        if (currentWeapon == primaryWeapon)
+        {
+            EquipWeapon(secondaryWeapon);
+        } else
+        {
+            EquipWeapon(primaryWeapon);
+        }
+    }
+
+    [ClientRpc]
+    private void ToggleWeaponClientRpc()
+    {
+        ToggleWeapon();
+    }
+
+    [ServerRpc]
+    private void ToggleWeaponServerRpc()
+    {
+        if (!IsHost)
+        {
+            ToggleWeapon();
+        }
+        ToggleWeaponClientRpc();
+    }
+
+    // Update is called once per frame
+    void Update()
+    {
+        if (IsLocalPlayer)
+        {
+            if (Input.GetKeyDown(KeyCode.Q))
+            {
+                ToggleWeaponServerRpc();
+            }
+        }
+    }
 }
 ```
 
-### `Player/PlayerShooting.cs`（特效触发）
+### `PlayerWeapon.cs`
 
 ```csharp
-private void OnShoot()
+using System;
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+
+[Serializable]
+public class PlayerWeapon
 {
-    weaponManager.GetCurrentGraphics().muzzleFlash.Play();
+    public string name = "M16A1";
+
+    public int damage = 10;
+    public float range = 100f;
+
+    public float shootRate = 10f;  // 一秒可以打多少发子弹。如果小于等于0，则为单发。
+    public float shootCoolDownTime = 0.75f;  // 单发模式的冷却时间
+    public float recoilForce = 2f;  // 后坐力
+
+    public GameObject graphics;
 }
+```
 
-private void OnHit(Vector3 pos, Vector3 normal, HitEffectMaterial material)
+### `PlayerController.cs`
+
+```csharp
+using System.Collections;
+using System.Collections.Generic;
+using Unity.VisualScripting;
+using UnityEngine;
+
+public class PlayerController : MonoBehaviour
 {
-    GameObject prefab = material == HitEffectMaterial.Metal
-        ? weaponManager.GetCurrentGraphics().metalHitEffectPrefab
-        : weaponManager.GetCurrentGraphics().stoneHitEffectPrefab;
+    [SerializeField]
+    private Rigidbody rb;
+    [SerializeField]
+    private Camera cam;
 
-    GameObject obj = Instantiate(prefab, pos, Quaternion.LookRotation(normal));
-    ParticleSystem ps = obj.GetComponent<ParticleSystem>();
-    ps.Emit(1);
-    ps.Play();
-    Destroy(obj, 1f);
+    private Vector3 velocity = Vector3.zero;  // 速度：每秒移动的距离
+    private Vector3 yRotation = Vector3.zero;  // 旋转角色
+    private Vector3 xRotation = Vector3.zero;  // 旋转视角
+    private float recoilForce = 0f;  // 后坐力
+
+    private float cameraRotationTotal = 0f;  // 累计转了多少度
+    [SerializeField]
+    private float cameraRotationLimit = 85f;
+
+    private Vector3 thrusterForce = Vector3.zero;  // 向上的推力
+
+
+    public void Move(Vector3 _velocity)
+    {
+        velocity = _velocity;
+    }
+
+
+    public void Rotate(Vector3 _yRotation, Vector3 _xRotation)
+    {
+        yRotation = _yRotation;
+        xRotation = _xRotation;
+    }
+
+    public void Thrust(Vector3 _thrusterForce)
+    {
+        thrusterForce = _thrusterForce;
+    }
+
+    public void AddRecoilForce(float newRecoilForce)
+    {
+        recoilForce += newRecoilForce;
+    }
+
+    private void PerformMovement()
+    {
+        if (velocity != Vector3.zero)
+        {
+            rb.MovePosition(rb.position + velocity * Time.fixedDeltaTime);
+        }
+
+        if (thrusterForce != Vector3.zero)
+        {
+            rb.AddForce(thrusterForce);  // 作用Time.fixedDeltaTime秒：0.02s
+        }
+    }
+
+    private void PerformRotation()
+    {
+        if (recoilForce < 0.1)
+        {
+            recoilForce = 0f;
+        }
+
+        if (yRotation != Vector3.zero || recoilForce > 0)
+        {
+            rb.transform.Rotate(yRotation + rb.transform.up * Random.Range(-2f * recoilForce, 2f * recoilForce));
+        }
+
+        if (xRotation != Vector3.zero || recoilForce > 0)
+        {
+            cameraRotationTotal += xRotation.x - recoilForce;
+            cameraRotationTotal = Mathf.Clamp(cameraRotationTotal, -cameraRotationLimit, cameraRotationLimit);
+            cam.transform.localEulerAngles = new Vector3(cameraRotationTotal, 0f, 0f);
+        }
+
+        recoilForce *= 0.5f;
+    }
+
+    private void FixedUpdate()
+    {
+        PerformMovement();
+        PerformRotation();
+    }
 }
 ```
 
 ---
 
-## Inspector 配置检查（本节重点）
+## 来源
 
-- 武器预制体根节点挂载 `WeaponGraphics`。
-- `muzzleFlash` 绑定枪口火焰粒子系统。
-- `metalHitEffectPrefab`、`stoneHitEffectPrefab` 绑定命中特效预制体。
-- `PlayerShooting` 与 `WeaponManager` 在同一玩家对象。
-- `PlayerShooting.mask` 可命中玩家与场景层。
-
----
-
-## 本节复盘
-
-- 已完成“开枪瞬时反馈 + 命中反馈”的联机同步链路。
-- 特效配置与武器解耦，切枪后可自动切换特效资源。
-- 为后续扩展（按 Tag 判定材质、对象池、音效、后坐力）打下基础。
+- 作者：yxc
+- 链接：https://www.acwing.com/activity/content/code/content/5894510/
+- 来源：AcWing
+- 版权：著作权归作者所有。商业转载请联系作者获得授权，非商业转载请注明出处。
