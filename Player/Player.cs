@@ -15,6 +15,7 @@ public class Player : NetworkBehaviour
     private NetworkVariable<int> currentHealth = new NetworkVariable<int>();
     private NetworkVariable<bool> isDead = new NetworkVariable<bool>();
 
+
     public void Setup()
     {
         componentsEnabled = new bool[componentsToDisable.Length];
@@ -44,6 +45,11 @@ public class Player : NetworkBehaviour
         }
     }
 
+    public bool IsDead()
+    {
+        return isDead.Value;
+    }
+
     public void TakeDamage(int damage)  // 收到了伤害，只在服务器端被调用
     {
         if (isDead.Value) return;
@@ -68,6 +74,8 @@ public class Player : NetworkBehaviour
         yield return new WaitForSeconds(GameManager.Singleton.MatchingSettings.respawnTime);
 
         SetDefaults();
+        GetComponentInChildren<Animator>().SetInteger("direction", 0);
+        GetComponent<Rigidbody>().useGravity = true;
 
         if (IsLocalPlayer)
         {
@@ -88,6 +96,9 @@ public class Player : NetworkBehaviour
 
     private void Die()
     {
+        GetComponentInChildren<Animator>().SetInteger("direction", -1);
+        GetComponent<Rigidbody>().useGravity = false;
+
         for (int i = 0; i < componentsToDisable.Length; i++)
         {
             componentsToDisable[i].enabled = false;

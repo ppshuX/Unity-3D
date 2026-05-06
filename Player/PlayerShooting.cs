@@ -33,6 +33,16 @@ public class PlayerShooting : NetworkBehaviour
         playerController = GetComponent<PlayerController>();
     }
 
+    private static bool ShootKeyHeld()
+    {
+        return Input.GetButton("Fire1");
+    }
+
+    private static bool ShootKeyDown()
+    {
+        return Input.GetButtonDown("Fire1");
+    }
+
     // Update is called once per frame
     void Update()
     {
@@ -44,7 +54,7 @@ public class PlayerShooting : NetworkBehaviour
 
         if (currentWeapon.shootRate <= 0)  // 单发
         {
-            if (Input.GetButtonDown("Fire1") && shootCoolDownTime >= currentWeapon.shootCoolDownTime)
+            if (ShootKeyDown() && shootCoolDownTime >= currentWeapon.shootCoolDownTime)
             {
                 autoShootCount = 0;
                 Shoot();
@@ -53,12 +63,12 @@ public class PlayerShooting : NetworkBehaviour
         }
         else
         {
-            if (Input.GetButtonDown("Fire1"))
+            if (ShootKeyDown())
             {
                 autoShootCount = 0;
                 InvokeRepeating("Shoot", 0f, 1f / currentWeapon.shootRate);
             }
-            else if (Input.GetButtonUp("Fire1") || Input.GetKeyDown(KeyCode.Q))
+            else if (!ShootKeyHeld() || Input.GetKeyDown(KeyCode.Q))
             {
                 CancelInvoke("Shoot");
             }
