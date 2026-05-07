@@ -1,6 +1,6 @@
 # Unity FPS 脚本说明（按当前代码同步）
 
-> 本文档描述 `Assets/Scripts` 当前可见脚本，重点覆盖 Lesson 6 的射击特效接入。
+> 本文档描述 `Assets/Scripts` 当前可见脚本，覆盖 Lesson 6 射击特效与 Lesson 9.1 网络 UI / 多端口。
 
 ## 当前脚本结构
 
@@ -25,6 +25,7 @@ Assets/Scripts/
 
 ## 功能概览（对应现有实现）
 
+- 网络菜单（Lesson 9.1）：`NetworkManagerUI` 提供 Host/Server/Client、两个「房间」客户端（7777 / 7778），并解析命令行 `-port`、`-lauch-as-server`；与同物体上的 `UNetTransport` 同步端口。
 - 移动输入：`PlayerInput` 负责移动、视角与跳跃推力输入。
 - 联机初始化：`PlayerSetup` 在本地/远端玩家上执行差异化组件开关与注册。
 - 武器切换：`WeaponManager` 管理主副武器实例化，并通过 `Q` + `ServerRpc/ClientRpc` 同步切枪。
@@ -32,6 +33,25 @@ Assets/Scripts/
 - 射击特效（Lesson 6）：`PlayerShooting` 通过 `WeaponGraphics` 触发枪口火焰与命中材质特效。
 - 生命与重生：`Player` 在服务端权威扣血，死亡后禁用组件并延时重生。
 - 对局状态显示：`GameManager` 维护玩家字典并在 `OnGUI` 绘制实时血量。
+
+## Lesson 9.1：端口、房间按钮与专服参数
+
+### 1) 传输层：`Network/NetworkManagerUI.cs` + `UNetTransport`
+
+- 依赖命名空间 `Unity.Netcode.Transports.UNET`；**与 `NetworkManagerUI` 同 GameObject** 挂载 `UNetTransport`，脚本内 `GetComponent<UNetTransport>()` 修改 `ConnectPort` 与 `ServerListenPort`。
+- **`room1`**：固定 **7777** 后 `StartClient()`；**`room2`**：固定 **7778** 后 `StartClient()`（用于本地多服多房间演示）。
+- **命令行**：`-port <n>` 设置端口（带 `i+1` 长度检查，避免缺参时 `Start()` 整段失败）；**`-lauch-as-server`**（课件拼写）自动 `StartServer()` 并销毁菜单。
+- **专服示例**：`Game.exe -lauch-as-server -port 7777`。
+
+### 2) Inspector 绑定
+
+1. `NetworkManager` 物体：`NetworkManager`、`UNetTransport`、`NetworkManagerUI`。
+2. 将 Host / Server / Client、`room1`、`room2` 共五个按钮拖入 `NetworkManagerUI` 对应字段。
+3. **Windows 打包若只配了 Host/Server/Client、漏绑 `room1`/`room2`**：旧版课件会先绑定房间再绑定 Host，会在 `Start()` 里因空引用中断，表现为 **点 Host/Server 完全没反应**。当前脚本已改为 **先绑定 Host/Server/Client，并对房间按钮判空**；仍建议在发布场景里把五个槽位都拖全。
+
+### 3) 版本注意
+
+- `UNetTransport` 在 **Unity 2021.3**（本工程）可用；升级到部分 **2022.2+** 版本后可能需改用 **UTP**，详见 `Lesson_Log/lesson-9.1.md`。
 
 ## Lesson 6：射击特效链路
 
