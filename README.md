@@ -1,6 +1,6 @@
 # Unity FPS 脚本说明（按当前代码同步）
 
-> 本文档描述 `Assets/Scripts` 当前可见脚本，覆盖 Lesson 6 射击特效与 Lesson 9.1 网络 UI / 多端口。
+> 本文档描述 `Assets/Scripts` 当前可见脚本，覆盖 Lesson 6 射击特效、Lesson 9.1（端口/专服背景）与 **Lesson 9.2（当前网络菜单：HTTP 房间列表）**。
 
 ## 当前脚本结构
 
@@ -10,8 +10,12 @@ Assets/Scripts/
 │  ├─ GameManager.cs
 │  └─ MatchingSettings.cs
 ├─ Network/
+│  ├─ BuildRoomResponse.cs
 │  ├─ ClientNetworkTransform.cs
-│  └─ NetworkManagerUI.cs
+│  ├─ GetRoomListResponse.cs
+│  ├─ NetworkManagerUI.cs
+│  ├─ RemoveRoomResponse.cs
+│  └─ Room.cs
 └─ Player/
    ├─ Player.cs
    ├─ PlayerController.cs
@@ -25,7 +29,7 @@ Assets/Scripts/
 
 ## 功能概览（对应现有实现）
 
-- 网络菜单（Lesson 9.1）：`NetworkManagerUI` 提供 Host/Server/Client、两个「房间」客户端（7777 / 7778），并解析命令行 `-port`、`-lauch-as-server`；与同物体上的 `UNetTransport` 同步端口。
+- 网络菜单（**Lesson 9.2**）：`NetworkManagerUI` 通过 **`UnityWebRequest`** 访问房间服务（基址 `http://49.232.65.186:8000`），**刷新列表**动态生成房间按钮（TMP）、**建房**后 `StartClient`，房主退出时 **`remove_room`**；仍支持命令行 **`-port`**、**`-lauch-as-server`**（专服路径下不初始化菜单）。详见 `Lesson_Log/lesson-9.2.md`。
 - 移动输入：`PlayerInput` 负责移动、视角与跳跃推力输入。
 - 联机初始化：`PlayerSetup` 在本地/远端玩家上执行差异化组件开关与注册。
 - 武器切换：`WeaponManager` 管理主副武器实例化，并通过 `Q` + `ServerRpc/ClientRpc` 同步切枪。
@@ -34,24 +38,36 @@ Assets/Scripts/
 - 生命与重生：`Player` 在服务端权威扣血，死亡后禁用组件并延时重生。
 - 对局状态显示：`GameManager` 维护玩家字典并在 `OnGUI` 绘制实时血量。
 
-## Lesson 9.1：端口、房间按钮与专服参数
+## Lesson 9.2：HTTP 房间列表与建房（当前实现）
 
-### 1) 传输层：`Network/NetworkManagerUI.cs` + `UNetTransport`
+### 1) `Network/NetworkManagerUI.cs`
 
-- 依赖命名空间 `Unity.Netcode.Transports.UNET`；**与 `NetworkManagerUI` 同 GameObject** 挂载 `UNetTransport`，脚本内 `GetComponent<UNetTransport>()` 修改 `ConnectPort` 与 `ServerListenPort`。
-- **`room1`**：固定 **7777** 后 `StartClient()`；**`room2`**：固定 **7778** 后 `StartClient()`（用于本地多服多房间演示）。
-- **命令行**：`-port <n>` 设置端口（带 `i+1` 长度检查，避免缺参时 `Start()` 整段失败）；**`-lauch-as-server`**（课件拼写）自动 `StartServer()` 并销毁菜单。
-- **专服示例**：`Game.exe -lauch-as-server -port 7777`。
+- **`ApiBase`**：`http://49.232.65.186:8000`；路径 **`/fps/get_room_list/`**、**`/fps/build_room/`**、**`/fps/remove_room/?port=`**。
+- 依赖 **`TMPro`**、`UnityEngine.Networking`；与 **`UNetTransport`** 同物体挂载。
+- **Refresh**：清旧动态 `Button`，用 **`roomButtonPrefab`** 在 **`menuUI`** 下实例化；点击某房 → 设端口 → **`StartClient()`** → `DestroyAllButtons()`。
+- **Build**：`error_message == "success"` 时记录 **`buildRoomPort`**，设端口并 **`StartClient()`**。
+- **退出**：`OnApplicationQuit` 若 `buildRoomPort != -1` 则请求退房。
 
-### 2) Inspector 绑定
+### 2) JSON DTO（`Network/`）
 
-1. `NetworkManager` 物体：`NetworkManager`、`UNetTransport`、`NetworkManagerUI`。
-2. 将 Host / Server / Client、`room1`、`room2` 共五个按钮拖入 `NetworkManagerUI` 对应字段。
-3. **Windows 打包若只配了 Host/Server/Client、漏绑 `room1`/`room2`**：旧版课件会先绑定房间再绑定 Host，会在 `Start()` 里因空引用中断，表现为 **点 Host/Server 完全没反应**。当前脚本已改为 **先绑定 Host/Server/Client，并对房间按钮判空**；仍建议在发布场景里把五个槽位都拖全。
+- **`Room`**：`name`、`port`。
+- **`GetRoomListResponse`**：`error_message`、`rooms`。
+- **`BuildRoomResponse`**：`error_message`、`name`、`port`。
+- **`RemoveRoomResponse`**：`error_message`。
 
-### 3) 版本注意
+### 3) Inspector 绑定
 
-- `UNetTransport` 在 **Unity 2021.3**（本工程）可用；升级到部分 **2022.2+** 版本后可能需改用 **UTP**，详见 `Lesson_Log/lesson-9.1.md`。
+1. 同 9.1：**`NetworkManager` + `UNetTransport` + `NetworkManagerUI`** 同一物体（或保证能 `GetComponent<UNetTransport>()`）。
+2. **Refresh**、**Build** 按钮；**`menuUI`（Canvas）**；**房间条目预制体**（根上 `Button`，子级 **`TextMeshProUGUI`** 显示房名）。
+
+### 4) 版本注意
+
+- `UNetTransport`：**Unity 2021.3** 本工程可用；升级 **2022.2+** 可能需 **UTP**，见 `Lesson_Log/lesson-9.2.md`。
+
+## Lesson 9.1：端口与专服（课件前置，菜单已由 9.2 替换）
+
+- 9.1 课为固定 **room1/room2**、Host/Server/Client 按钮；**当前工程 `NetworkManagerUI` 已升级为 9.2**，不再使用五个固定房间按钮。
+- **`-port` / `-lauch-as-server`** 行为仍在上面的 `NetworkManagerUI` 中保留；专服说明与 9.1 笔记见 **`Lesson_Log/lesson-9.1.md`**。
 
 ## Lesson 6：射击特效链路
 
@@ -74,7 +90,7 @@ Assets/Scripts/
 - `GetCurrentGraphics()` 供 `PlayerShooting` 读取当前武器特效引用。
 - 切枪后会自动切换到新武器的特效配置。
 
-## Inspector 配置检查
+## Inspector 配置检查（武器 / 射击）
 
 1. 每把武器预制体根节点挂载 `WeaponGraphics`。
 2. `WeaponGraphics.muzzleFlash` 已绑定粒子系统。
@@ -87,9 +103,11 @@ Assets/Scripts/
 - 命中材质判定暂为简化版（玩家=Metal，其他=Stone），未按 Tag/Material 自动识别真实材质。
 - 命中特效仅做本地播放与 1 秒销毁，未做对象池优化。
 - HUD 仍是 `OnGUI` 调试样式，未接入正式 UI。
+- 房间 HTTP 仅做连接错误等粗判；`JsonUtility` 对 JSON 格式敏感，需与服务端字段一致。
 
 ## 后续建议
 
 - 将命中材质改为按 `Tag` 或 `PhysicMaterial` 自动判定。
 - 对 `muzzleFlash` 与命中特效使用对象池，降低频繁 `Instantiate/Destroy` 开销。
 - 增加音效、后坐力、换弹与击中标记，完善射击反馈闭环。
+- 房间 API 可改为 HTTPS、Token 校验与错误码统一展示。

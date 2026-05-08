@@ -1,30 +1,54 @@
 using System.Collections;
 using System.Collections.Generic;
+using TMPro;
 using Unity.Netcode;
 using Unity.Netcode.Transports.UNET;
 using UnityEngine;
+using UnityEngine.Networking;
 using UnityEngine.UI;
 
 public class NetworkManagerUI : MonoBehaviour
 {
-    [SerializeField]
-    private Button hostBtn;
-    [SerializeField]
-    private Button serverBtn;
-    [SerializeField]
-    private Button clientBtn;
+    /// <summary>Lesson 9.2 房间列表 HTTP API（你可改域名/端口）。</summary>
+    private const string ApiBase = "http://49.232.65.186:8000";
 
     [SerializeField]
-    private Button room1;
+    private Button refreshButton;
     [SerializeField]
-    private Button room2;
+    private Button buildButton;
 
-    // Start is called before the first frame update
-    void Start()
+    [SerializeField]
+    private Canvas menuUI;
+    [SerializeField]
+    private GameObject roomButtonPrefab;
+
+    private readonly List<Button> rooms = new List<Button>();
+
+    private int buildRoomPort = -1;
+
+    private void Start()
+    {
+        if (!ApplyCommandLineConfig())
+            return;
+
+        InitButtons();
+        RefreshRoomList();
+    }
+
+    private void OnApplicationQuit()
+    {
+        if (buildRoomPort != -1)
+        {
+            RemoveRoom();
+        }
+    }
+
+    /// <summary>返回 false 时表示已作为专服启动，不再初始化菜单。</summary>
+    private bool ApplyCommandLineConfig()
     {
         var args = System.Environment.GetCommandLineArgs();
 
-        for (int i = 0; i < args.Length; i ++ )
+        for (int i = 0; i < args.Length; i++)
         {
             if (args[i] == "-port" && i + 1 < args.Length)
             {
@@ -37,102 +61,189 @@ public class NetworkManagerUI : MonoBehaviour
             }
         }
 
-        for (int i = 0; i < args.Length; i ++ )
+        for (int i = 0; i < args.Length; i++)
         {
             if (args[i] == "-lauch-as-server")
             {
-                if (NetworkManager.Singleton == null)
-                {
-                    Debug.LogError("NetworkManager.Singleton 为 null，无法以专服启动。");
-                }
-                else
-                {
+                if (NetworkManager.Singleton != null)
                     NetworkManager.Singleton.StartServer();
-                }
+                else
+                    Debug.LogError("NetworkManager.Singleton 为 null，无法以专服启动。");
 
                 DestroyAllButtons();
+                return false;
             }
         }
 
-        // 必须先注册 Host/Server/Client：若 room1/room2 在打包场景里未赋值，
-        // 原课件顺序会在 room1.onClick 处抛错，导致这三个按钮从未绑定。
-        if (hostBtn != null)
+        return true;
+    }
+
+    private void InitButtons()
+    {
+        if (refreshButton != null)
         {
-            hostBtn.onClick.AddListener(() =>
-            {
-                if (!EnsureNetworkManager()) return;
-                NetworkManager.Singleton.StartHost();
-                DestroyAllButtons();
-            });
+            refreshButton.onClick.AddListener(RefreshRoomList);
         }
 
-        if (serverBtn != null)
+        if (buildButton != null)
         {
-            serverBtn.onClick.AddListener(() =>
-            {
-                if (!EnsureNetworkManager()) return;
-                NetworkManager.Singleton.StartServer();
-                DestroyAllButtons();
-            });
-        }
-
-        if (clientBtn != null)
-        {
-            clientBtn.onClick.AddListener(() =>
-            {
-                if (!EnsureNetworkManager()) return;
-                NetworkManager.Singleton.StartClient();
-                DestroyAllButtons();
-            });
-        }
-
-        if (room1 != null)
-        {
-            room1.onClick.AddListener(() =>
-            {
-                var transport = GetComponent<UNetTransport>();
-                if (transport != null)
-                {
-                    transport.ConnectPort = transport.ServerListenPort = 7777;
-                }
-
-                if (!EnsureNetworkManager()) return;
-                NetworkManager.Singleton.StartClient();
-                DestroyAllButtons();
-            });
-        }
-
-        if (room2 != null)
-        {
-            room2.onClick.AddListener(() =>
-            {
-                var transport = GetComponent<UNetTransport>();
-                if (transport != null)
-                {
-                    transport.ConnectPort = transport.ServerListenPort = 7778;
-                }
-
-                if (!EnsureNetworkManager()) return;
-                NetworkManager.Singleton.StartClient();
-                DestroyAllButtons();
-            });
+            buildButton.onClick.AddListener(BuildRoom);
         }
     }
 
-    private static bool EnsureNetworkManager()
+    private void RefreshRoomList()
     {
-        if (NetworkManager.Singleton != null) return true;
+        StartCoroutine(RefreshRoomListRequest(ApiBase + "/fps/get_room_list/"));
+    }
 
-        Debug.LogError("NetworkManager.Singleton 为 null：请确认场景中有启用的 NetworkManager。");
-        return false;
+    private IEnumerator RefreshRoomListRequest(string uri)
+    {
+        using (UnityWebRequest uwr = UnityWebRequest.Get(uri))
+        {
+            yield return uwr.SendWebRequest();
+
+            if (uwr.result == UnityWebRequest.Result.ConnectionError)
+                yield break;
+
+            var resp = JsonUtility.FromJson<GetRoomListResponse>(uwr.downloadHandler.text);
+            if (resp == null || resp.rooms == null)
+                yield break;
+
+            foreach (var room in rooms)
+            {
+                if (room != null)
+                {
+                    room.onClick.RemoveAllListeners();
+                    Destroy(room.gameObject);
+                }
+            }
+
+            rooms.Clear();
+
+            int k = 0;
+            foreach (var room in resp.rooms)
+            {
+                if (roomButtonPrefab == null || menuUI == null)
+                    break;
+
+                int roomPort = room.port;
+                string roomName = room.name;
+
+                GameObject buttonObj = Instantiate(roomButtonPrefab, menuUI.transform);
+                buttonObj.transform.localPosition = new Vector3(-21, 92 - k * 60, 0);
+                Button button = buttonObj.GetComponent<Button>();
+                var label = button != null ? button.GetComponentInChildren<TextMeshProUGUI>() : null;
+                if (label != null)
+                    label.text = roomName;
+
+                if (button != null)
+                {
+                    button.onClick.AddListener(() =>
+                    {
+                        var transport = GetComponent<UNetTransport>();
+                        if (transport != null)
+                        {
+                            transport.ConnectPort = transport.ServerListenPort = roomPort;
+                        }
+
+                        if (NetworkManager.Singleton == null)
+                        {
+                            Debug.LogError("NetworkManager.Singleton 为 null。");
+                            return;
+                        }
+
+                        NetworkManager.Singleton.StartClient();
+                        DestroyAllButtons();
+                    });
+                    rooms.Add(button);
+                }
+
+                k++;
+            }
+        }
+    }
+
+    private void BuildRoom()
+    {
+        StartCoroutine(BuildRoomRequest(ApiBase + "/fps/build_room/"));
+    }
+
+    private IEnumerator BuildRoomRequest(string uri)
+    {
+        using (UnityWebRequest uwr = UnityWebRequest.Get(uri))
+        {
+            yield return uwr.SendWebRequest();
+
+            if (uwr.result == UnityWebRequest.Result.ConnectionError)
+                yield break;
+
+            var resp = JsonUtility.FromJson<BuildRoomResponse>(uwr.downloadHandler.text);
+            if (resp == null || resp.error_message != "success")
+                yield break;
+
+            var transport = GetComponent<UNetTransport>();
+            if (transport != null)
+            {
+                transport.ConnectPort = transport.ServerListenPort = resp.port;
+            }
+
+            buildRoomPort = resp.port;
+
+            if (NetworkManager.Singleton == null)
+            {
+                Debug.LogError("NetworkManager.Singleton 为 null。");
+                yield break;
+            }
+
+            NetworkManager.Singleton.StartClient();
+            DestroyAllButtons();
+        }
+    }
+
+    private void RemoveRoom()
+    {
+        StartCoroutine(RemoveRoomRequest(ApiBase + "/fps/remove_room/?port=" + buildRoomPort));
+    }
+
+    private IEnumerator RemoveRoomRequest(string uri)
+    {
+        using (UnityWebRequest uwr = UnityWebRequest.Get(uri))
+        {
+            yield return uwr.SendWebRequest();
+
+            if (uwr.result == UnityWebRequest.Result.ConnectionError)
+                yield break;
+
+            var resp = JsonUtility.FromJson<RemoveRoomResponse>(uwr.downloadHandler.text);
+            if (resp != null && resp.error_message == "success")
+            {
+            }
+        }
     }
 
     private void DestroyAllButtons()
     {
-        if (hostBtn != null) Destroy(hostBtn.gameObject);
-        if (serverBtn != null) Destroy(serverBtn.gameObject);
-        if (clientBtn != null) Destroy(clientBtn.gameObject);
-        if (room1 != null) Destroy(room1.gameObject);
-        if (room2 != null) Destroy(room2.gameObject);
+        if (refreshButton != null)
+        {
+            refreshButton.onClick.RemoveAllListeners();
+            Destroy(refreshButton.gameObject);
+        }
+
+        if (buildButton != null)
+        {
+            buildButton.onClick.RemoveAllListeners();
+            Destroy(buildButton.gameObject);
+        }
+
+        foreach (var room in rooms)
+        {
+            if (room != null)
+            {
+                room.onClick.RemoveAllListeners();
+                Destroy(room.gameObject);
+            }
+        }
+
+        rooms.Clear();
     }
 }
