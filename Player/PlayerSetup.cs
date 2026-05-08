@@ -8,6 +8,10 @@ public class PlayerSetup : NetworkBehaviour
     [SerializeField]
     private Behaviour[] componentsToDisable;
 
+    [Tooltip("进游戏后要关掉的场景/菜单相机。勿依赖 Camera.main：FPS 标成 MainCamera 时 Main 已是子相机，会被误关。")]
+    [SerializeField]
+    private Camera menuWorldCamera;
+
     private Camera sceneCamera;
 
     // Start is called before the first frame update
@@ -24,7 +28,16 @@ public class PlayerSetup : NetworkBehaviour
         {
             PlayerUI.Singleton.setPlayer(GetComponent<Player>());
             SetLayerMaskForAllChildren(transform, LayerMask.NameToLayer("Player"));
-            sceneCamera = Camera.main;
+            if (menuWorldCamera != null)
+            {
+                sceneCamera = menuWorldCamera;
+            }
+            else
+            {
+                GameObject sceneCamGo = GameObject.Find("SceneCamera");
+                sceneCamera = sceneCamGo != null ? sceneCamGo.GetComponent<Camera>() : null;
+            }
+
             if (sceneCamera != null)
             {
                 sceneCamera.gameObject.SetActive(false);

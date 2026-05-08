@@ -68,6 +68,14 @@ Assets/Scripts/
 
 - `UNetTransport`：**Unity 2021.3** 本工程可用；升级 **2022.2+** 可能需 **UTP**，见 `Lesson_Log/lesson-9.2.md`。
 
+### 5) 玩家 / UI / 相机（与 Lesson 10 一致）
+
+- **Tag、MainCamera、`Menu World Camera`、头顶条、射击 Mask**：打包与联机排查见 **`Lesson_Log/lesson-10.md`** 文末 **Inspector 检查清单**。
+
+### 6) 云端与 Web（扩展）
+
+- **HTTP 与专服分工、Linux 多端口无头进程、WebGL 安装与托管**：见 **`Lesson_Log/lesson-9.2.md`** 文末两节。
+
 ## Lesson 9.1：端口与专服（课件前置，菜单已由 9.2 替换）
 
 - 9.1 课为固定 **room1/room2**、Host/Server/Client 按钮；**当前工程 `NetworkManagerUI` 已升级为 9.2**，不再使用五个固定房间按钮。

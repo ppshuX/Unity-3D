@@ -66,4 +66,23 @@
 
 ---
 
+## 云端与端口：HTTP「黑板」≠ 游戏进程
+
+- **HTTP 服务**（`ApiBase`）：只做**房间列表 / 建房登记 / 退房**等，返回的每条记录里通常带 **端口**。
+- **真正能联机的是 Netcode 监听**：需要在某台机（常见为 **Linux VPS**）上，对每个端口起一个 **无头专服**，与 HTTP 里登记的端口**一致**。
+- **Linux 无头示例**（课件参数拼写 **`lauch`**）：
+  ```bash
+  ./YourBuild.x86_64 -batchmode -nographics -lauch-as-server -port 7777 -logFile server-7777.log
+  ```
+- **多房间**：**一个进程占一个端口**，例如 7777、7778、7779 各一条命令；**安全组 / 防火墙**需放行对应端口。
+
+---
+
+## Web 版（WebGL）补充说明
+
+- **Build Settings → WebGL**：需先在 **Unity Hub** 为该编辑器版本安装 **WebGL Build Support**，再 **Switch Platform**、**Build**；产物为 **`index.html` + 静态资源**，可放到 **Nginx / OSS / 静态托管** 上通过 **URL** 访问。
+- **与本工程联机**：浏览器内网络能力与 **PC + UNet 专服** 差异大，**不要默认**认为与 Windows/Linux 单机包行为一致；往往要单独评估 **传输、HTTPS、跨域（CORS）** 等。
+
+---
+
 *参考：AcWing 作者 yxc — [课上代码](https://www.acwing.com/activity/content/code/content/6331705/)*
