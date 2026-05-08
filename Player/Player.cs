@@ -96,6 +96,8 @@ public class Player : NetworkBehaviour
 
     private void Die()
     {
+        GetComponent<PlayerShooting>().StopShooting();
+
         GetComponentInChildren<Animator>().SetInteger("direction", -1);
         GetComponent<Rigidbody>().useGravity = false;
 

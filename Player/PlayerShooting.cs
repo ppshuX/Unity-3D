@@ -33,16 +33,6 @@ public class PlayerShooting : NetworkBehaviour
         playerController = GetComponent<PlayerController>();
     }
 
-    private static bool ShootKeyHeld()
-    {
-        return Input.GetButton("Fire1");
-    }
-
-    private static bool ShootKeyDown()
-    {
-        return Input.GetButtonDown("Fire1");
-    }
-
     // Update is called once per frame
     void Update()
     {
@@ -52,9 +42,20 @@ public class PlayerShooting : NetworkBehaviour
 
         currentWeapon = weaponManager.GetCurrentWeapon();
 
+        if (Input.GetKeyDown(KeyCode.K))
+        {
+            ShootServerRpc(transform.name, 10);
+        }
+
+        if (Input.GetKeyDown(KeyCode.R))
+        {
+            weaponManager.Reload(currentWeapon);
+            return;
+        }
+
         if (currentWeapon.shootRate <= 0)  // 单发
         {
-            if (ShootKeyDown() && shootCoolDownTime >= currentWeapon.shootCoolDownTime)
+            if (Input.GetButtonDown("Fire1") && shootCoolDownTime >= currentWeapon.shootCoolDownTime)
             {
                 autoShootCount = 0;
                 Shoot();
@@ -63,16 +64,21 @@ public class PlayerShooting : NetworkBehaviour
         }
         else
         {
-            if (ShootKeyDown())
+            if (Input.GetButtonDown("Fire1"))
             {
                 autoShootCount = 0;
                 InvokeRepeating("Shoot", 0f, 1f / currentWeapon.shootRate);
             }
-            else if (!ShootKeyHeld() || Input.GetKeyDown(KeyCode.Q))
+            else if (Input.GetButtonUp("Fire1") || Input.GetKeyDown(KeyCode.Q))
             {
                 CancelInvoke("Shoot");
             }
         }
+    }
+
+    public void StopShooting()
+    {
+        CancelInvoke("Shoot");
     }
 
     private void OnHit(Vector3 pos, Vector3 normal, HitEffectMaterial material)  // 击中点的特效
@@ -139,6 +145,15 @@ public class PlayerShooting : NetworkBehaviour
 
     private void Shoot()
     {
+        if (currentWeapon.bullets <= 0 || currentWeapon.isReloading) return;
+
+        currentWeapon.bullets--;
+
+        if (currentWeapon.bullets <= 0)
+        {
+            weaponManager.Reload(currentWeapon);
+        }
+
         autoShootCount++;
         float recoilForce = currentWeapon.recoilForce;
 

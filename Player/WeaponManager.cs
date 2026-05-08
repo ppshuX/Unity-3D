@@ -1,7 +1,7 @@
 using System.Collections;
 using System.Collections.Generic;
-using UnityEngine;
 using Unity.Netcode;
+using UnityEngine;
 
 public class WeaponManager : NetworkBehaviour
 {
@@ -98,5 +98,21 @@ public class WeaponManager : NetworkBehaviour
                 ToggleWeaponServerRpc();
             }
         }
+    }
+
+    public void Reload(PlayerWeapon playerWeapon)
+    {
+        if (playerWeapon.isReloading) return;
+        playerWeapon.isReloading = true;
+
+        StartCoroutine(ReloadCoroutine(playerWeapon));
+    }
+
+    private IEnumerator ReloadCoroutine(PlayerWeapon playerWeapon)
+    {
+        yield return new WaitForSeconds(playerWeapon.reloadTime);
+
+        playerWeapon.bullets = playerWeapon.maxBullets;
+        playerWeapon.isReloading = false;
     }
 }

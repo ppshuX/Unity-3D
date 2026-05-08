@@ -19,8 +19,10 @@ public class PlayerSetup : NetworkBehaviour
         {
             SetLayerMaskForAllChildren(transform, LayerMask.NameToLayer("Remote Player"));
             DisableComponents();
-        } else
+        }
+        else
         {
+            PlayerUI.Singleton.setPlayer(GetComponent<Player>());
             SetLayerMaskForAllChildren(transform, LayerMask.NameToLayer("Player"));
             sceneCamera = Camera.main;
             if (sceneCamera != null)
@@ -39,7 +41,7 @@ public class PlayerSetup : NetworkBehaviour
     private void SetLayerMaskForAllChildren(Transform transform, LayerMask layerMask)
     {
         transform.gameObject.layer = layerMask;
-        for (int i = 0; i < transform.childCount; i++)
+        for (int i = 0; i < transform.childCount; i ++ )
         {
             SetLayerMaskForAllChildren(transform.GetChild(i), layerMask);
         }
