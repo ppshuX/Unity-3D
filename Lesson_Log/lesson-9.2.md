@@ -8,7 +8,7 @@
 
 - **`UnityWebRequest.Get(uri)`** 拉取 JSON，通过 **`JsonUtility.FromJson<T>(text)`** 反序列化。
 - DTO 类型需带 **`[System.Serializable]`**，字段名与 JSON 键一致（区分大小写）。
-- 本工程 DTO：`Room`、`GetRoomListResponse`、`BuildRoomResponse`、`RemoveRoomResponse`（均在 `Assets/Scripts/Network/`）。
+- 本工程 DTO：`Room`、`GetRoomListResponse`、`BuildRoomResponse`、`RemoveRoomResponse`（均在 `Assets/Scripts/Network/response/`）。
 
 ### 2) 三个接口（本仓库基址）
 
@@ -46,10 +46,10 @@
 | 文件 | 作用 |
 |------|------|
 | `Network/NetworkManagerUI.cs` | 菜单逻辑、HTTP、专服入口 |
-| `Network/Room.cs` | 单房间数据结构 |
-| `Network/GetRoomListResponse.cs` | 列表接口响应 |
-| `Network/BuildRoomResponse.cs` | 建房接口响应 |
-| `Network/RemoveRoomResponse.cs` | 退房接口响应 |
+| `Network/response/Room.cs` | 单房间数据结构 |
+| `Network/response/GetRoomListResponse.cs` | 列表接口响应 |
+| `Network/response/BuildRoomResponse.cs` | 建房接口响应 |
+| `Network/response/RemoveRoomResponse.cs` | 退房接口响应 |
 
 ---
 

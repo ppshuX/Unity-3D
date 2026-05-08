@@ -10,12 +10,13 @@ Assets/Scripts/
 │  ├─ GameManager.cs
 │  └─ MatchingSettings.cs
 ├─ Network/
-│  ├─ BuildRoomResponse.cs
 │  ├─ ClientNetworkTransform.cs
-│  ├─ GetRoomListResponse.cs
 │  ├─ NetworkManagerUI.cs
-│  ├─ RemoveRoomResponse.cs
-│  └─ Room.cs
+│  └─ response/
+│     ├─ BuildRoomResponse.cs
+│     ├─ GetRoomListResponse.cs
+│     ├─ RemoveRoomResponse.cs
+│     └─ Room.cs
 └─ Player/
    ├─ Player.cs
    ├─ PlayerController.cs
@@ -51,7 +52,7 @@ Assets/Scripts/
 - **Build**：`error_message == "success"` 时记录 **`buildRoomPort`**，设端口并 **`StartClient()`**。
 - **退出**：`OnApplicationQuit` 若 `buildRoomPort != -1` 则请求退房。
 
-### 2) JSON DTO（`Network/`）
+### 2) JSON DTO（`Network/response/`）
 
 - **`Room`**：`name`、`port`。
 - **`GetRoomListResponse`**：`error_message`、`rooms`。
